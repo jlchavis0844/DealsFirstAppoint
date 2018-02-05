@@ -36,6 +36,8 @@ namespace DealsFirstAppoint {
             logPath += now.ToString("ddMMyyyyHHmmss");
             log = new StreamWriter(logPath + ".txt");
             log.WriteLine("Starting check");
+            Console.WriteLine("Starting check");
+
             string me = Environment.UserDomainName.ToString() + @"\" + Environment.UserName;
 
             SetOwnerData();
@@ -45,7 +47,7 @@ namespace DealsFirstAppoint {
             DateTime lastWeek = DateTime.Now.Date.AddDays(-7);
             
             log.WriteLine(limitDate + " to " + now);
-
+            Console.WriteLine(limitDate + " to " + now);
             JObject jsonObj = JObject.Parse(testJSON) as JObject;
             var jArr = jsonObj["items"] as JArray;
 
@@ -76,6 +78,8 @@ namespace DealsFirstAppoint {
                 }
                 else if(updated_at < lastWeek){
                     log.WriteLine(last_stage_change_at + " is too old, breaking");
+                    Console.WriteLine(last_stage_change_at + " is too old, breaking");
+                    
                     break;
                 }
             }
@@ -83,6 +87,7 @@ namespace DealsFirstAppoint {
             string nextURL = jsonObj["meta"]["links"]["next_page"].ToString();
             while (Convert.ToDateTime(jArr.Last["data"]["made_at"]) >= limitDate) {
                 log.WriteLine(Convert.ToDateTime(jArr.Last["data"]["made_at"]) + " >= " + limitDate);
+                Console.WriteLine(Convert.ToDateTime(jArr.Last["data"]["made_at"]) + " >= " + limitDate);
                 jsonObj = JObject.Parse(Get(nextURL, token)) as JObject;
                 nextURL = jsonObj["meta"]["links"]["next_page"].ToString();
                 jArr = jsonObj["items"] as JArray;
@@ -113,6 +118,7 @@ namespace DealsFirstAppoint {
                     }
                     else if (updated_at < lastWeek) {
                         log.WriteLine(last_stage_change_at + " is too old, breaking");
+                        Console.WriteLine(last_stage_change_at + " is too old, breaking");
                         break;
                     }
                 }
@@ -120,12 +126,15 @@ namespace DealsFirstAppoint {
 
             if(conList.Count <= 0) {
                 log.WriteLine("Empty results after 7 days, quitting...");
+                Console.WriteLine("Empty results after 7 days, quitting...");
                 log.Close();
                 Environment.Exit(0);
             }
 
             //StreamWriter file = new StreamWriter("H:\\Desktop\\1stAppDataLine.csv");
             log.WriteLine("id,created_at, updated_at, last_stage_change_at,last_stage_change_by_id,owner_name, owner_id");
+            Console.WriteLine("id,created_at, updated_at, last_stage_change_at,last_stage_change_by_id,owner_name, owner_id");
+
             List<Object[]> inserts = new List<Object[]>();
 
             foreach (var item in conList) {
@@ -133,6 +142,8 @@ namespace DealsFirstAppoint {
                 item.owner_name, item.owner_id};
                 inserts.Add(tempObj);
                 log.WriteLine(item.id + ", " + item.created_at + ", " + item.updated_at + ", " + item.last_stage_change_at + 
+                    ", " + item.last_stage_change_by_id + ", " + item.owner_name + ", " + item.owner_id);
+                Console.WriteLine(item.id + ", " + item.created_at + ", " + item.updated_at + ", " + item.last_stage_change_at +
                     ", " + item.last_stage_change_by_id + ", " + item.owner_name + ", " + item.owner_id);
             }
 
@@ -159,10 +170,12 @@ namespace DealsFirstAppoint {
 
                             if (result < 0) {
                                 log.WriteLine("INSERT failed for " + command.ToString());
+                                Console.WriteLine("INSERT failed for " + command.ToString());
                             }
                         }
                         catch (Exception ex) {
                             log.WriteLine(ex);
+                            Console.WriteLine(ex);
                             log.Flush();
                         }
                         finally {
@@ -173,6 +186,7 @@ namespace DealsFirstAppoint {
             }
 
             log.WriteLine("Done!");
+            Console.WriteLine("Done!");
             log.Close();
             //log.ReadLine();
         }
@@ -189,6 +203,8 @@ namespace DealsFirstAppoint {
             }
             catch (Exception ex) {
                 log.WriteLine(ex);
+                log.WriteLine(ex);
+
                 log.Flush();
                 return body;
             }
@@ -241,6 +257,8 @@ namespace DealsFirstAppoint {
                         else log.WriteLine("Found max date of " + limit);
                     } catch (Exception ex) {
                         log.WriteLine(ex);
+                        Console.WriteLine(ex);
+
                         log.Flush();
                     } finally {
                         connection.Close();
@@ -275,6 +293,8 @@ namespace DealsFirstAppoint {
                     }
                     catch (Exception ex) {
                         log.WriteLine(ex);
+                        Console.WriteLine(ex);
+
                         log.Flush();
                     }
                     finally {
