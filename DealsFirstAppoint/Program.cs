@@ -12,19 +12,19 @@ using unirest_net.http;
 namespace DealsFirstAppoint {
     class Program {
         public static Dictionary<int, string> ownersData = new Dictionary<int, string>();
-        public static Dictionary<int, string> outcomeData = new Dictionary<int, string>();
-        public static Dictionary<int, string> sourceData = new Dictionary<int, string>();
+        public static Dictionary<int, string> stageData = new Dictionary<int, string>();
         public static StreamWriter log;
         public static List<Owner> owners;
         public static List<Deal> conList;
         public static string token = "";
         private static Random random = new Random();
         private static string connString = "Data Source=RALIMSQL1;Initial Catalog=CAMSRALFG;Integrated Security=SSPI;";
-        private static string line = @"INSERT INTO [CAMSRALFG].[dbo].[BaseFirstApps] ([dealID], [set_at], [set_by], [insertedby], " +
-            "[created_at],[Owner_name], [owner_id]) VALUES (@id, @last_stage_change_at, @last_stage_change_by_id, @me, @created_at,@owner_name, @owner_id);";
+        private static string line = @"INSERT INTO [CAMSRALFG].[dbo].[StageChanges] ([dealID], [set_at], [set_by], [insertedby], " +
+            "[created_at],[Owner_name], [owner_id], [stage_id], [stageName]) VALUES (@id, @last_stage_change_at, " + 
+            "@last_stage_change_by_id, @me, @created_at,@owner_name, @owner_id, @stage_id, @stageName);";
 
         static void Main(string[] args) {
-            string startURL = @"https://api.getbase.com/v2/deals?per_page=100&sort_by=updated_at:desc&stage_id=4517459";
+            string startURL = @"https://api.getbase.com/v2/deals?per_page=100&sort_by=updated_at:desc";
             owners = new List<Owner>();
             conList = new List<Deal>();
             var fs = new FileStream(@"C:\apps\NiceOffice\token", FileMode.Open, FileAccess.Read, FileShare.ReadWrite);
@@ -33,13 +33,20 @@ namespace DealsFirstAppoint {
                 token = sr.ReadToEnd();
             }
             string logPath = @"\\NAS3\NOE_Docs$\RALIM\Logs\Base\NewApps_";
-            logPath += now.ToString("ddMMyyyyHHmmss");
-            log = new StreamWriter(logPath + ".txt");
+            logPath += now.ToString("ddMMyyyy") + ".txt";
+
+            if (!File.Exists(logPath)) {
+                using(StreamWriter sw = File.CreateText(logPath)) {
+                    sw.WriteLine("Creating 1st appoitment log file for " + now.ToString("ddMMyyyy") + " at " + now.ToString());
+                }
+            }
+
+            log = File.AppendText(logPath);
             log.WriteLine("Starting check");
             Console.WriteLine("Starting check");
 
             string me = Environment.UserDomainName.ToString() + @"\" + Environment.UserName;
-
+            SetStageData();
             SetOwnerData();
             DateTime limitDate = GetLastDate();
 
@@ -59,6 +66,9 @@ namespace DealsFirstAppoint {
                 DateTime updated_at = Convert.ToDateTime(data["updated_at"]).ToLocalTime();
                 DateTime last_stage_change_at = Convert.ToDateTime(data["last_stage_change_at"]).ToLocalTime();
 
+                int stage_id = Convert.ToInt32(data["stage_id"]);
+                string stageName = stageData[stage_id];
+
                 int last_stage_change_by_id = 0;
                 if (data["last_stage_change_by_id"] != null && data["last_stage_change_by_id"].ToString() != "") {
                     last_stage_change_by_id = Convert.ToInt32(data["last_stage_change_by_id"]);
@@ -72,22 +82,22 @@ namespace DealsFirstAppoint {
                 string owner_name = ownersData[owner_id].ToString();
 
                 if (last_stage_change_at >= limitDate) {
-                    if (CheckForDuplicates(id) == false) {
-                        conList.Add(new Deal(id, created_at, updated_at, last_stage_change_at, last_stage_change_by_id, owner_name, owner_id));
+                    if (CheckForDuplicates(id, stage_id) == false) {
+                        conList.Add(new Deal(id, created_at, updated_at, last_stage_change_at, last_stage_change_by_id, 
+                            owner_name, owner_id, stage_id, stageName));
                     }
                 }
                 else if(updated_at < lastWeek){
                     log.WriteLine(last_stage_change_at + " is too old, breaking");
                     Console.WriteLine(last_stage_change_at + " is too old, breaking");
-                    
                     break;
                 }
             }
 
             string nextURL = jsonObj["meta"]["links"]["next_page"].ToString();
-            while (Convert.ToDateTime(jArr.Last["data"]["made_at"]) >= limitDate) {
-                log.WriteLine(Convert.ToDateTime(jArr.Last["data"]["made_at"]) + " >= " + limitDate);
-                Console.WriteLine(Convert.ToDateTime(jArr.Last["data"]["made_at"]) + " >= " + limitDate);
+            while (Convert.ToDateTime(jArr.Last["data"]["updated_at"]) >= limitDate) {
+                log.WriteLine(Convert.ToDateTime(jArr.Last["data"]["updated_at"]) + " >= " + limitDate);
+                Console.WriteLine(Convert.ToDateTime(jArr.Last["data"]["updated_at"]) + " >= " + limitDate);
                 jsonObj = JObject.Parse(Get(nextURL, token)) as JObject;
                 nextURL = jsonObj["meta"]["links"]["next_page"].ToString();
                 jArr = jsonObj["items"] as JArray;
@@ -98,6 +108,9 @@ namespace DealsFirstAppoint {
                     DateTime created_at = Convert.ToDateTime(data["created_at"]).ToLocalTime();
                     DateTime updated_at = Convert.ToDateTime(data["updated_at"]).ToLocalTime();
                     DateTime last_stage_change_at = Convert.ToDateTime(data["last_stage_change_at"]).ToLocalTime();
+
+                    int stage_id = Convert.ToInt32(data["stage_id"]);
+                    string stageName = stageData[stage_id];
 
                     int last_stage_change_by_id = 0;
                     if (data["last_stage_change_by_id"] != null && data["last_stage_change_by_id"].ToString() != "") {
@@ -112,8 +125,9 @@ namespace DealsFirstAppoint {
                     string owner_name = ownersData[owner_id].ToString();
 
                     if (last_stage_change_at > limitDate) {
-                        if (CheckForDuplicates(id) == false) {
-                            conList.Add(new Deal(id, created_at, updated_at, last_stage_change_at, last_stage_change_by_id, owner_name, owner_id));
+                        if (CheckForDuplicates(id, stage_id) == false) {
+                            conList.Add(new Deal(id, created_at, updated_at, last_stage_change_at, last_stage_change_by_id,
+                                owner_name, owner_id, stage_id, stageName));
                         }
                     }
                     else if (updated_at < lastWeek) {
@@ -132,19 +146,21 @@ namespace DealsFirstAppoint {
             }
 
             //StreamWriter file = new StreamWriter("H:\\Desktop\\1stAppDataLine.csv");
-            log.WriteLine("id,created_at, updated_at, last_stage_change_at,last_stage_change_by_id,owner_name, owner_id");
-            Console.WriteLine("id,created_at, updated_at, last_stage_change_at,last_stage_change_by_id,owner_name, owner_id");
+            //log.WriteLine("id,created_at, updated_at, last_stage_change_at,last_stage_change_by_id,owner_name, owner_id");
+            //Console.WriteLine("id,created_at, updated_at, last_stage_change_at,last_stage_change_by_id,owner_name, owner_id");
 
             List<Object[]> inserts = new List<Object[]>();
 
             foreach (var item in conList) {
                 Object[] tempObj = {item.id, item.created_at, item.last_stage_change_at, item.last_stage_change_by_id,
-                item.owner_name, item.owner_id};
+                item.owner_name, item.owner_id, item.stage_id, item.stageName};
                 inserts.Add(tempObj);
                 log.WriteLine(item.id + ", " + item.created_at + ", " + item.updated_at + ", " + item.last_stage_change_at + 
-                    ", " + item.last_stage_change_by_id + ", " + item.owner_name + ", " + item.owner_id);
+                    ", " + item.last_stage_change_by_id + ", " + item.owner_name + ", " + item.owner_id 
+                    + ", " + item.stage_id + ", " + item.stageName);
                 Console.WriteLine(item.id + ", " + item.created_at + ", " + item.updated_at + ", " + item.last_stage_change_at +
-                    ", " + item.last_stage_change_by_id + ", " + item.owner_name + ", " + item.owner_id);
+                    ", " + item.last_stage_change_by_id + ", " + item.owner_name + ", " + item.owner_id
+                    + ", " + item.stage_id + ", " + item.stageName);
             }
 
             //file.Flush();
@@ -163,6 +179,8 @@ namespace DealsFirstAppoint {
                         command.Parameters.Add("@owner_name", SqlDbType.NVarChar).Value = oArr[4];
                         command.Parameters.Add("@owner_id", SqlDbType.Int).Value = oArr[5];
                         command.Parameters.Add("@me", SqlDbType.NVarChar).Value = me;
+                        command.Parameters.Add("@stage_id", SqlDbType.Int).Value = oArr[6];
+                        command.Parameters.Add("@stageName", SqlDbType.NVarChar).Value = oArr[7];
 
                         try {
                             connection.Open();
@@ -222,24 +240,24 @@ namespace DealsFirstAppoint {
             }
         }
 
-        public static void SetOutcomeData() {
-            string testJSON = Get(@"https://api.getbase.com/v2/call_outcomes?per_page=100", token);
+        public static void SetStageData() {
+            string testJSON = Get(@"https://api.getbase.com/v2/stages?per_page=100", token);
             JObject jObj = JObject.Parse(testJSON) as JObject;
             JArray jArr = jObj["items"] as JArray;
-            outcomeData.Add(0, "Unknown");
+            stageData.Add(0, "Unknown");
 
             foreach (var obj in jArr) {
                 var data = obj["data"];
                 int tID = Convert.ToInt32(data["id"]);
                 string tName = data["name"].ToString();
-                outcomeData.Add(tID, tName);
+                stageData.Add(tID, tName);
             }
         }
 
         public static DateTime GetLastDate() {
             DateTime limit = new DateTime();
             using (SqlConnection connection = new SqlConnection(connString)) {
-                string sqlStr = "SELECT MAX([set_at]) FROM [CAMSRALFG].[dbo].[BaseFirstApps];";
+                string sqlStr = "SELECT MAX([set_at]) FROM [CAMSRALFG].[dbo].[StageChanges];";
                 using (SqlCommand command = new SqlCommand(sqlStr, connection)) {
 
                     try {
@@ -248,11 +266,13 @@ namespace DealsFirstAppoint {
                         SqlDataReader result = command.ExecuteReader();
 
                         while (result.Read()) {
-                            limit = result.GetDateTime(0);
+                            if (!result.IsDBNull(0)) {
+                                limit = result.GetDateTime(0);
+                            }
                         }
 
                         if (limit == DateTime.MinValue) {
-                            throw new Exception("No Max Date Found");
+                            return DateTime.Now.Date.AddDays(-7);
                         }
                         else log.WriteLine("Found max date of " + limit);
                     } catch (Exception ex) {
@@ -269,10 +289,10 @@ namespace DealsFirstAppoint {
             return limit;
         }
 
-        public static bool CheckForDuplicates(int id) {
+        public static bool CheckForDuplicates(int id, int stage_id) {
             int cnt_of_id = -1;
             using (SqlConnection connection = new SqlConnection(connString)) {
-                string sqlStr = "SELECT COUNT(*) FROM [CAMSRALFG].[dbo].[BaseFirstApps] WHERE dealID = " + id + ";";
+                string sqlStr = "SELECT COUNT(*) FROM [CAMSRALFG].[dbo].[StageChanges] WHERE dealID = " + id + " AND [stage_id] = " + stage_id +";";
                 using (SqlCommand command = new SqlCommand(sqlStr, connection)) {
 
                     try {
