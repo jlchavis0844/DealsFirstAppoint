@@ -5,8 +5,6 @@ using System.Data;
 using System.Data.SqlClient;
 using System.IO;
 using System.Linq;
-using System.Text;
-using System.Threading.Tasks;
 using unirest_net.http;
 
 namespace DealsFirstAppoint {
@@ -18,12 +16,17 @@ namespace DealsFirstAppoint {
         public static List<Deal> conList;
         public static string token = "";
         private static Random random = new Random();
+        public static int reports_to_id = 778823; // default agent limiter is reports to victor
         private static string connString = "Data Source=RALIMSQL1;Initial Catalog=CAMSRALFG;Integrated Security=SSPI;";
         private static string line = @"INSERT INTO [CAMSRALFG].[dbo].[StageChanges] ([dealID], [set_at], [set_by], [insertedby], " +
-            "[created_at],[Owner_name], [owner_id], [stage_id], [stageName]) VALUES (@id, @last_stage_change_at, " + 
-            "@last_stage_change_by_id, @me, @created_at,@owner_name, @owner_id, @stage_id, @stageName);";
+            "[created_at],[Owner_name], [owner_id], [stage_id], [stageName], [ecd]) VALUES (@id, @last_stage_change_at, " +
+            "@last_stage_change_by_id, @me, @created_at,@owner_name, @owner_id, @stage_id, @stageName, @estimated_close_date);";
 
         static void Main(string[] args) {
+            
+            if (args.Count() != 0)
+                reports_to_id = Convert.ToInt32(args[0]);
+
             string startURL = @"https://api.getbase.com/v2/deals?per_page=100&sort_by=updated_at:desc";
             owners = new List<Owner>();
             conList = new List<Deal>();
@@ -61,6 +64,17 @@ namespace DealsFirstAppoint {
             foreach (var v in jArr) {
                 var data = v["data"];
 
+                int owner_id = 0;
+                if (data["owner_id"] != null && data["owner_id"].ToString() != "") {
+                    owner_id = Convert.ToInt32(data["owner_id"]);
+                }
+
+                if (!ownersData.ContainsKey(owner_id)) {//if the owner is missing, do not catalog status changes
+                    continue;
+                }
+
+                string owner_name = ownersData[owner_id].ToString();
+
                 int id = Convert.ToInt32(data["id"]);
                 DateTime created_at = Convert.ToDateTime(data["created_at"]).ToLocalTime();
                 DateTime updated_at = Convert.ToDateTime(data["updated_at"]).ToLocalTime();
@@ -68,23 +82,16 @@ namespace DealsFirstAppoint {
 
                 int stage_id = Convert.ToInt32(data["stage_id"]);
                 string stageName = stageData[stage_id];
-
+                string estimated_close_date = data["estimated_close_date"].ToString();
                 int last_stage_change_by_id = 0;
                 if (data["last_stage_change_by_id"] != null && data["last_stage_change_by_id"].ToString() != "") {
                     last_stage_change_by_id = Convert.ToInt32(data["last_stage_change_by_id"]);
                 }
 
-                int owner_id = 0;
-                if(data["owner_id"] != null && data["owner_id"].ToString() != "") {
-                    owner_id = Convert.ToInt32(data["owner_id"]);
-                }
-
-                string owner_name = ownersData[owner_id].ToString();
-
                 if (last_stage_change_at >= limitDate) {
                     if (CheckForDuplicates(id, stage_id) == false) {
                         conList.Add(new Deal(id, created_at, updated_at, last_stage_change_at, last_stage_change_by_id, 
-                            owner_name, owner_id, stage_id, stageName));
+                            owner_name, owner_id, stage_id, stageName, estimated_close_date));
                     }
                 }
                 else if(updated_at < lastWeek){
@@ -104,6 +111,18 @@ namespace DealsFirstAppoint {
 
                 foreach (var v in jArr) {
                     var data = v["data"];
+
+                    int owner_id = 0;
+                    if (data["owner_id"] != null && data["owner_id"].ToString() != "") {
+                        owner_id = Convert.ToInt32(data["owner_id"]);
+                    }
+
+                    if (!ownersData.ContainsKey(owner_id)) {//if the owner is missing, do not catalog status changes
+                        continue;
+                    }
+
+                    string owner_name = ownersData[owner_id].ToString();
+
                     int id = Convert.ToInt32(data["id"]);
                     DateTime created_at = Convert.ToDateTime(data["created_at"]).ToLocalTime();
                     DateTime updated_at = Convert.ToDateTime(data["updated_at"]).ToLocalTime();
@@ -111,23 +130,16 @@ namespace DealsFirstAppoint {
 
                     int stage_id = Convert.ToInt32(data["stage_id"]);
                     string stageName = stageData[stage_id];
-
+                    string estimated_close_date = data["estimated_close_date"].ToString();
                     int last_stage_change_by_id = 0;
                     if (data["last_stage_change_by_id"] != null && data["last_stage_change_by_id"].ToString() != "") {
                         last_stage_change_by_id = Convert.ToInt32(data["last_stage_change_by_id"]);
                     }
 
-                    int owner_id = 0;
-                    if (data["owner_id"] != null && data["owner_id"].ToString() != "") {
-                        owner_id = Convert.ToInt32(data["owner_id"]);
-                    }
-
-                    string owner_name = ownersData[owner_id].ToString();
-
                     if (last_stage_change_at > limitDate) {
                         if (CheckForDuplicates(id, stage_id) == false) {
                             conList.Add(new Deal(id, created_at, updated_at, last_stage_change_at, last_stage_change_by_id,
-                                owner_name, owner_id, stage_id, stageName));
+                                owner_name, owner_id, stage_id, stageName, estimated_close_date));
                         }
                     }
                     else if (updated_at < lastWeek) {
@@ -153,14 +165,14 @@ namespace DealsFirstAppoint {
 
             foreach (var item in conList) {
                 Object[] tempObj = {item.id, item.created_at, item.last_stage_change_at, item.last_stage_change_by_id,
-                item.owner_name, item.owner_id, item.stage_id, item.stageName};
+                item.owner_name, item.owner_id, item.stage_id, item.stageName, item.estimated_close_date};
                 inserts.Add(tempObj);
                 log.WriteLine(item.id + ", " + item.created_at + ", " + item.updated_at + ", " + item.last_stage_change_at + 
                     ", " + item.last_stage_change_by_id + ", " + item.owner_name + ", " + item.owner_id 
-                    + ", " + item.stage_id + ", " + item.stageName);
+                    + ", " + item.stage_id + ", " + item.stageName + "," + item.estimated_close_date);
                 Console.WriteLine(item.id + ", " + item.created_at + ", " + item.updated_at + ", " + item.last_stage_change_at +
                     ", " + item.last_stage_change_by_id + ", " + item.owner_name + ", " + item.owner_id
-                    + ", " + item.stage_id + ", " + item.stageName);
+                    + ", " + item.stage_id + ", " + item.stageName + "," + item.estimated_close_date);
             }
 
             //file.Flush();
@@ -181,6 +193,16 @@ namespace DealsFirstAppoint {
                         command.Parameters.Add("@me", SqlDbType.NVarChar).Value = me;
                         command.Parameters.Add("@stage_id", SqlDbType.Int).Value = oArr[6];
                         command.Parameters.Add("@stageName", SqlDbType.NVarChar).Value = oArr[7];
+                        command.Parameters.Add("@estimated_close_date", SqlDbType.NVarChar).Value = oArr[8];
+
+                        string query = command.CommandText;
+
+                        foreach (SqlParameter p in command.Parameters) {
+                            query = query.Replace(p.ParameterName, p.Value.ToString());
+                        }
+                        log.WriteLine(query);
+                        Console.WriteLine(query);
+
 
                         try {
                             connection.Open();
@@ -234,6 +256,12 @@ namespace DealsFirstAppoint {
             JArray jArr = jObj["items"] as JArray;
             foreach (var obj in jArr) {
                 var data = obj["data"];
+                int reports_to = 0;
+                if(data["reports_to"] != null && data["reports_to"].ToString() != "") {
+                    reports_to = Convert.ToInt32(data["reports_to"]);
+                }
+                if (reports_to != reports_to_id)//if they don't report to Victor/argument, skip
+                    continue;
                 int tID = Convert.ToInt32(data["id"]);
                 string tName = data["name"].ToString();
                 ownersData.Add(tID, tName);
@@ -321,7 +349,6 @@ namespace DealsFirstAppoint {
                         connection.Close();
                     }
                 }
-
             }
             if (cnt_of_id > 0) {
                 return true;
